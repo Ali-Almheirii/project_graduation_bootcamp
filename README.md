@@ -1,6 +1,6 @@
 # Agent‑Driven ERP System
 
-This repository contains a reference implementation of a modular, agent‑driven ERP platform built as part of a bootcamp graduation project.  The goal of the system is to demonstrate how large language models (LLMs) and composable tools can be combined to create a flexible, conversational interface over classic ERP functionality.  It is **not** a production‑ready system, but a well‑organised starting point for experimentation and future development.
+This repository contains a modular, agent‑driven ERP prototype. It demonstrates how local LLMs and composable tools (SQL, vector RAG, analytics helpers) can provide a conversational interface over classic ERP workflows. It is not production‑ready, but organized for experimentation and extension.
 
 ## High‑Level Architecture
 
@@ -13,43 +13,91 @@ This repository contains a reference implementation of a modular, agent‑driven
              ┌────────────────────┼────────────────────┐
              │                    │                    │
         ┌────▼─────┐       ┌──────▼─────┐       ┌──────▼────┐
-        │ Router   │       │ Domain     │ …     │ Domain    │
-        │ Agent    │       │ Agent (X)  │       │ Agent (Y) │
-        └──────────┘       └────────────┘       └───────────┘
-             │
-             ▼
+        │ Router   │       │ Sales      │       │ Finance   │
+        │ Agent    │       │ Agent      │       │ Agent     │
+        └────┬─────┘       └─────┬──────┘       └─────┬─────┘
+             │                   │                    │
+             │             ┌─────▼─────┐        ┌─────▼─────┐
+             │             │ Inventory │        │ Analytics │
+             │             │ Agent     │        │ Agent     │
+             ▼             └───────────┘        └───────────┘
          ┌───────────┐
-         │ Tools &   │
+         │ Tools &   │  SQL + Vector RAG + ML‑like helpers
          │ Utilities │
          └────┬──────┘
               │
          ┌────▼──────┐
-         │  SQLite    │
+         │  SQLite    │  (project_data/erp.db)
          │  Database  │
          └────────────┘
 ```
 
-1. **Streamlit Front‑end:** A light‑weight chat UI that sends user messages to the FastAPI server and displays responses.  It is intentionally minimal and can be extended or replaced by a more sophisticated React front‑end.
+- Streamlit UI: Minimal chat interface that talks to the API.
+- FastAPI (`app.py`): Exposes `/chat`, `/orders` (GET/POST) and wires all agents.
+- Router Agent (`agents/router_agent.py`): LLM‑based domain classification → delegates to domain agents; logs tool calls to DB.
+- Domain Agents (`agents/*.py`):
+  - Sales: customers, leads, orders, support tickets; RAG‑assisted procedures; lead scoring helper.
+  - Finance: invoices, payments; policy RAG; approval thresholds for high‑value invoices.
+  - Inventory: stock, suppliers, purchase orders; document RAG.
+  - Analytics: saved reports, ad‑hoc analysis; text‑to‑SQL + simple chart specs.
+- Tools (`tools/*.py`): `sql_tool.py`, `vector_rag_tool.py` (sentence‑transformers + ChromaDB, with fallbacks), analytics helpers, approval system, audit logging, conversation/entity memory.
+- Database (`database.py`): Single SQLite connection, helper APIs. Default DB at `project_data/erp.db`.
+- LLM Integration (`llm.py`): Uses LM Studio local server by default (`LM_STUDIO_URL`, default `http://localhost:1234/v1/chat/completions`). Functions are named `call_gemini*` for compatibility, but all calls go to LM Studio unless you change the URL.
 
-2. **FastAPI Back‑end (`app.py`):** Exposes a simple `/chat` endpoint for conversational input and a handful of domain‑specific endpoints (e.g. listing orders or invoices).  The back‑end instantiates the router and domain agents and manages shared resources like the database connection and LLM client.
+## Project Structure (selected)
 
-3. **Router Agent (`agents/router_agent.py`):** Receives each user utterance, calls the LLM to determine which domain agent should handle the request and then delegates the request to that agent.  It also records tool invocations and approvals in the database.  The router is LLM‑driven and will raise an error if no `GEMINI_API_KEY` is provided or if the call fails.
+- `app.py` – FastAPI app and endpoints
+- `streamlit_app.py` – Streamlit chat UI (uses `ERP_API_URL`)
+- `agents/` – Router, Sales, Finance, Inventory, Analytics
+- `tools/` – SQL, Vector RAG (Chroma), analytics (text‑to‑SQL + charts), approvals, audit log, memory
+- `models/common.py` – Pydantic models for API
+- `database.py` – SQLite helpers
+- `project_data/erp.db` – Sample database
+- `vector_db/` – Chroma persistent store (pre‑seeded collections)
 
-4. **Domain Agents (`agents/*.py`):** Each domain agent encapsulates the logic for a particular business area:
-   - **SalesAgent:** Manages customers, leads, orders and tickets.
-   - **FinanceAgent:** Handles invoices, payments and ledger entries.
-   - **InventoryAgent:** Maintains stock levels, purchase orders and supplier data.
-   - **AnalyticsAgent:** Executes saved reports and ad‑hoc analytical queries.
+## Database
 
-5. **Tools (`tools/*.py`):** Provide reusable capabilities such as SQL read/write helpers (`sql_tool.py`) and a vector-based retrieval‑augmented generator (`vector_rag_tool.py`). The RAG tool uses sentence-transformers for embeddings and ChromaDB for vector storage, providing semantic search capabilities with domain-specific tools for Sales, Finance, Inventory, and Analytics.
+- Default path: `project_data/erp.db` (override with `ERP_DB_PATH`).
+- Contains minimal tables used by agents, plus optional `documents` and `saved_reports`.
+- On import, `tools/saved_reports.py` attempts to initialize default saved reports if the table exists.
 
-6. **Database (`database.py`):** Centralised helper for opening and reusing a SQLite connection.  This project ships with `erp.db`, which contains a small set of pre‑populated tables described in the accompanying database documentation.  See the `project_data` directory for the sample database.
+## Vector RAG
 
-7. **LLM Integration (`llm.py`):** Contains a thin wrapper around Google’s Gemini API.  The wrapper reads your API key from the `GEMINI_API_KEY` environment variable.  If the key is missing or the API returns an error the call will raise an exception—no fallback logic is provided.  You can replace the implementation with a call to a local LLM via LM Studio by editing this file.
+- `tools/vector_rag_tool.py` uses sentence‑transformers (`all‑MiniLM‑L6‑v2`) and ChromaDB.
+- If vector deps are missing, it prints a warning and falls back to a simple keyword search over files referenced in the `documents` table.
+- Persistent store at `./vector_db` (included).
 
-## Running Locally
+## API Endpoints
 
-1. Install the dependencies:
+- `POST /chat` – Body: `{ "message": str, "conversation_id": Optional[int] }` → `{ "conversation_id": int, "response": str }`
+- `GET /orders?limit=10` – Recent orders with customer names
+- `POST /orders` – Create an order. Body: `{ "customer_id": int, "items": [{"product_id": int, "quantity": int}, ...] }`
+
+## Environment Variables
+
+- `LM_STUDIO_URL` – LM Studio chat completions endpoint. Default: `http://localhost:1234/v1/chat/completions`
+- `ERP_DB_PATH` – Optional override for SQLite DB path
+- `ERP_API_URL` – Used by Streamlit UI to reach the API (default `http://localhost:8000`)
+
+## Prerequisites
+
+- Python 3.10+
+- LM Studio (with a chat model loaded) if using the chat/LLM features
+- On first run of LM Studio: start the Local Server and load a model
+
+## Setup & Run
+
+### 1) Create a virtual environment and install deps
+
+Windows (PowerShell):
+
+```powershell
+python -m venv .venv
+./.venv/Scripts/Activate.ps1
+pip install -r requirements.txt
+```
+
+macOS/Linux (bash):
 
 ```bash
 python -m venv .venv
@@ -57,29 +105,60 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2. Set your Gemini API key:
+### 2) Start LM Studio local server
+
+1. Open LM Studio
+2. Load a chat‑capable model
+3. Go to “Local Server” → Start Server (defaults to `http://localhost:1234`)
+4. Optional: set a custom URL via `LM_STUDIO_URL`
+
+### 3) Run the FastAPI server
+
+From the project root:
 
 ```bash
-export GEMINI_API_KEY=<your‑api‑key>
+uvicorn app:app --reload
 ```
 
-3. Start the FastAPI server:
+The API will be at `http://localhost:8000`.
+
+Test quickly (PowerShell):
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/chat -Body (@{ message = 'show recent orders' } | ConvertTo-Json) -ContentType 'application/json'
+```
+
+### 4) Run the Streamlit UI (optional)
+
+In a second terminal:
 
 ```bash
-uvicorn erp_app.app:app --reload
+streamlit run streamlit_app.py
 ```
 
-4. In a separate terminal run the Streamlit UI (if you have `streamlit` installed):
+If your API runs on a non‑default URL, set before launching:
 
 ```bash
-streamlit run erp_app/streamlit_app.py
+$env:ERP_API_URL='http://localhost:8000'   # PowerShell
+export ERP_API_URL='http://localhost:8000' # macOS/Linux
 ```
 
-5. Open the Streamlit interface in your browser (usually at `http://localhost:8501`) and start chatting.  Alternatively you can POST directly to the `/chat` endpoint using curl or Postman.
+Open `http://localhost:8501` and chat with the system.
 
-## Notes
+## How It Works (brief)
 
-* **Local vs. Cloud LLMs:** This implementation uses a cloud‑hosted Gemini endpoint by default.  If you prefer to run a local LLM (e.g. via LM Studio) you can modify `llm.py` to call your local server instead.  The rest of the system does not need to change.
-* **Approvals and Logging:** The router logs tool calls and approvals into the `tool_calls` and `approvals` tables.  For brevity this reference implementation does not enforce approval flows; it only records them.
-* **MCP Registry:** The original project spec references a Modular Composable Protocol (MCP) registry tool.  In this simplified implementation we provide a minimal registry inside the router that lists the available tools on each domain agent.  You can extend this to a full MCP server in the future.
-* **Extensibility:** The code is organised for clarity over brevity.  Each agent exposes discrete methods that can be individually tested and reused.  Adding a new domain agent typically involves creating a new class in `agents/`, registering it in the router, and adding any necessary SQL helpers in `tools/`.
+- Router uses the LLM (`llm.py`) to classify the user request into Sales/Finance/Inventory/Analytics and routes to the corresponding agent.
+- Agents use `tools/sql_tool.py` for DB access; some write helper records (e.g., leads, invoices, purchase orders) to demonstrate workflows. Finance enforces approval thresholds via `tools/approval_system.py`.
+- RAG tools search Chroma collections or fall back to file keyword search. Agents optionally blend RAG context into answers.
+- `tools/audit_logger.py` records tool calls. `tools/memory_manager.py` keeps short conversation context and simple entity memory in `customer_kv`.
+
+## Troubleshooting
+
+- LLM errors like “endpoint not found (404)” → Start LM Studio Local Server and ensure a model is loaded; verify `LM_STUDIO_URL`.
+- Vector warnings → Install `sentence-transformers` and `chromadb` (already in `requirements.txt`), then rerun.
+- Empty analytics/saved reports → Ensure DB is `project_data/erp.db`; default reports initialize only if the `saved_reports` table exists.
+- Windows CRLF warnings from Git are harmless.
+
+## License
+
+For educational and demonstration purposes.
