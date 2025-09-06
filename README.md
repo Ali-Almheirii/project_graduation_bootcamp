@@ -4,6 +4,10 @@ This repository contains a modular, agent‑driven ERP prototype. It demonstrate
 
 ## High‑Level Architecture
 
+**Note:** The current implementation has `/orders` endpoints that bypass the router and go directly to the database. In a proper agent-driven design, only `/chat` should exist, with the Router Agent deciding all actions based on user messages.
+
+!!!!!!!!!!!!!!!!!!!!!!!!!THIS SHOULD BE FIXED BEFORE SUBMISSION!!!!!!!!!!!!!!!!!!!!!!!!!
+
 ```
 ┌────────────┐    HTTP    ┌─────────────┐
 │ Streamlit  │ ─────────▶ │  FastAPI     │
