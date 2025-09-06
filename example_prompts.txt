@@ -1,0 +1,43 @@
+# Example Prompts for Agent-Driven ERP System
+
+## Scenarios for Agents
+
+### Sales Agent Examples
+1. "Show me recent orders"
+2. "Create a new lead for John Smith at TechCorp, email john@techcorp.com"
+3. "What are our lead qualification procedures?"
+
+### Finance Agent Examples
+1. "Show me recent invoices"
+2. "Create a new invoice for $500"
+3. "What is our refund policy?"
+
+### Inventory Agent Examples
+1. "Show me current stock levels"
+2. "List all suppliers"
+3. "What are our supplier contract terms?"
+
+### Analytics Agent Examples
+1. "Show me total revenue"
+2. "What was our highest revenue day?"
+3. "What is customer lifetime value?"
+
+### Router Agent Examples
+1. "Show me recent orders" (routes to Sales)
+2. "What is our refund policy?" (routes to Finance)
+3. "Show me current stock levels" (routes to Inventory)
+
+## Scenarios for Tools
+
+### SQL Tool Examples
+1. "Show me recent orders" (triggers SQL read)
+2. "Create a new invoice for $500" (triggers SQL write)
+3. "List all customers" (triggers SQL read)
+
+### Vector RAG Tool Examples
+1. "What is our refund policy?" (triggers PolicyRAGTool)
+2. "What are our lead qualification procedures?" (triggers SalesRAGTool)
+3. "What are our supplier contract terms?" (triggers DocRAGTool)
+4. "What is customer lifetime value?" (triggers DefinitionRAGTool)
+5. "Explain conversion rate metrics" (triggers vector search)
+6. "How do we handle customer complaints?" (triggers vector search)
